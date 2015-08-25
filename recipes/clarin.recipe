@@ -9,27 +9,29 @@ from calibre.web.feeds.news import BasicNewsRecipe
 
 class Clarin(BasicNewsRecipe):
     title                 = 'Clarín'
-    __author__            = 'Darko Miletic'
+    __author__            = 'Francisco Herrera'
     description           = 'Clarin.com. Noticias de la Argentina y el mundo. Información actualizada las 24 horas y en español. Informate ya'
     publisher             = 'Grupo Clarin'
     category              = 'news, politics, Argentina'
-    oldest_article        = 2
-    max_articles_per_feed = 100
+    oldest_article        = 1
+    max_articles_per_feed = 50
     use_embedded_content  = False
     no_stylesheets        = True
     encoding              = 'utf8'
     delay                 = 1
     language              = 'es_AR'
     publication_type      = 'newspaper'
-    INDEX                 = 'http://www.clarin.com/politica'
+    INDEX                 = 'http://www.clarin.com'
     masthead_url          = 'http://www.clarin.com/static/CLAClarin/images/logo-clarin-print.jpg'
     extra_css             = """
                                body{font-family: Arial,Helvetica,sans-serif}
-                               h2{font-family: Georgia,serif; font-size: xx-large}
-                               .info,.columnista,.hora{font-size: small}
+                               .columnista {
+font-size: small;
+
+}
                             """
 
-    #ignore_duplicate_articles = {'title', 'url'} # mucho redireccionamiento entre clarin.com y clarin.ieco.com
+    ignore_duplicate_articles = {'title', 'url'} # mucho redireccionamiento entre clarin.com y clarin.ieco.com
 
     conversion_options = {
                           'comment'  : description
@@ -37,8 +39,13 @@ class Clarin(BasicNewsRecipe):
                         , 'publisher': publisher
                         , 'language' : language
                         }
-'''
-feeds = [
+
+    remove_tags_after       = [
+		dict(name='div', attrs={'class':'nota'})
+	]
+    remove_attributes = ['lang']
+
+    feeds = [
                (u'Página principal' , u'http://www.clarin.com/rss/')
               ,(u'Política'         , u'http://www.clarin.com/rss/politica/')
               ,(u'Sociedad'         , u'http://www.clarin.com/rss/sociedad/')
@@ -53,91 +60,76 @@ feeds = [
               ,(u'Tecnología'       , u'http://next.clarin.com/rss/')
               ,(u'Rural'            , u'http://www.clarin.com/rss/rural/')
               ,(u'Educación'        , u'http://www.clarin.com/rss/educacion/')
-              ,(u'Opinión'          , u'http://www.clarin.com/rss/opinion/')
-]
-'''
-
-    keep_only_tags    = [
-        dict(name='h1'),
-        dict(name='div', attrs={'class':'img-box'}),
-        dict(name='div', attrs={'class':'nota'}),
-        dict(name='div', attrs={'class':'columnista'})
-        #,dict(name='article', id={'Aries','Tauro'})
-
-    ]
-
-    #preprocess_regexps = [(re.compile(r'<head>.*?</head>', re.DOTALL), lambda
-     #   m:'<head></head>')]
-
-    remove_tags       = [
-        dict(name=['meta','base','link','iframe','embed','object'])
-    ]
-    remove_attributes = ['lang']
-
+           ]
 
     def print_version(self, url):
-        return url + '?print=1'
-
-    def parse_index(self):
-        soup = self.index_to_soup(self.INDEX)
-        col = soup.find(name=['ul'], attrs={'class':'items'})
-        current_articles, feeds = [], []
-        for tag in col.findAll(name=['li'], attrs={'class':'item'}):
-            a = tag.find('a', href=True)
-            h3 = tag.find('h3')
-            if a is not None:
-                title, url = self.tag_to_string(h3), 'http://www.clarin.com' + a['href']
-                if title and url:
-                    p = tag.find('p')
-                    desc = self.tag_to_string(p) if p is not None else ''
-                    current_articles.append({'title':title, 'url':url, 'description':desc})
-                    self.log('\tArticle:', title, '[%s]' % url)
-                    self.log('\t\t', desc)
-        if current_articles:
-            feeds.append(('Política', current_articles))
-        return feeds
-
-http://www.clarin.com/horoscopo.html
-
-
-
-    def get_article_url(self, article):
-        return article.get('guid',  None)
+        return self.browser.open_novisit(url).geturl()
 
     def get_cover_url(self):
-        cover_url = "http://tapas.clarin.com/tapa/"
-        myarray = [time.strftime("%Y"),time.strftime("%m"),time.strftime("%d")]
-        for x in range(len(myarray)):
-            cover_url = cover_url + myarray[x] + "/"
-        cover_url = cover_url + time.strftime("%Y%m%d")+ "_thumb.jpg"
+        from datetime import datetime, timedelta
+
+        br = self.cloned_browser
+        dat = datetime.now()
+        for x in (0,1):
+            stg = dat.strftime("%Y%m%d")
+            cover_url = "http://tapas.clarin.com/tapa/{}/{}/{}/{}_thumb.jpg".format(stg[:4],stg[4:6],stg[6:8],stg)
+            try:
+                br.open(cover_url)
+                break
+            except Exception as e:
+                if hasattr(e, 'getcode') and e.getcode() == 404:
+                    dat = dat - timedelta(days=1)
+                cover_url = None
         return cover_url
 
+    #def is_link_wanted(self, url, tag): devuelve booleano
 
 
-'''
-    def parse_index(self):
-        soup = self.index_to_soup(self.INDEX)
-        col = soup.find(attrs={'class':'contentColumn singleContent'})
-        current_section, current_articles = None, []
-        feeds = []
-        for tag in col.findAll(name=['h2', 'li'], attrs={'class':['section-header', 'top-item', 'river-item']}):
-            if tag.name == 'h2':
-                if current_section and current_articles:
-                    feeds.append((current_section, current_articles))
-                current_section = self.tag_to_string(tag).capitalize()
-                current_articles = []
-                self.log('Found section:', current_section)
-            elif current_section:
-                a = tag.find('a', href=True)
-                if a is not None:
-                    title, url = self.tag_to_string(a), a['href']
-                    if title and url:
-                        p = tag.find('p', attrs={'class':'river-dek'})
-                        desc = self.tag_to_string(p) if p is not None else ''
-                        current_articles.append({'title':title, 'url':url, 'description':desc})
-                        self.log('\tArticle:', title, '[%s]' % url)
-                        self.log('\t\t', desc)
-        if current_section and current_articles:
-            feeds.append((current_section, current_articles))
-        return feeds
-'''
+
+    def preprocess_raw_html(self, raw_html, url):
+
+        return '<html><head></head><body>'+raw_html[raw_html.find('<h1>'):]
+
+    def preprocess_html(self, soup):
+
+        title = soup.h1
+        volanta = soup.p
+        #pendiente sibling de volanta
+        columnista = soup.find(name=['div'], attrs={'class':lambda x: x and 'columnista' in x.split()})
+
+        caca = columnista.ul
+        if caca:
+            caca.name = "p"
+            for each in caca.findAll(name=['li']):
+                each.name == "span"
+
+        nota = soup.find(name=['div'], attrs={'class':'nota'})
+        imagen = soup.find(name=['div'], attrs={'class':'img-box'})
+
+        mysoup = self.index_to_soup("<html><head></head><body></body></html>")
+        mysoup.body.insert(len(mysoup.body), title)
+        mysoup.body.insert(len(mysoup.body), volanta)
+        if imagen:
+            mysoup.body.insert(len(mysoup.body), imagen)
+        if columnista:
+            mysoup.body.insert(len(mysoup.body), columnista)
+        mysoup.body.insert(len(mysoup.body), nota)
+        open('/home/user/Escritorio/recipe_test/preprocess_html.txt', 'wb').write(unicode(mysoup))
+
+        return mysoup
+
+    def postprocess_html(self, soup, first_fetch):
+        '''
+        This method is called with the source of each downloaded :term:`HTML` file, after
+        it is parsed for links and images.
+        It can be used to do arbitrarily powerful post-processing on the :term:`HTML`.
+        It should return `soup` after processing it.
+
+        :param soup: A `BeautifulSoup <http://www.crummy.com/software/BeautifulSoup/bs3/documentation.html>`_  instance containing the downloaded :term:`HTML`.
+        :param first_fetch: True if this is the first page of an article.
+
+        '''
+
+        soup.find(name=['div'], attrs={'class':lambda x: x and 'calibre_navbar' in x.split()}).extract()
+        open('/home/user/Escritorio/recipe_test/postprocess_html.txt', 'wb').write(unicode(soup))
+        return soup
