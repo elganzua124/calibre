@@ -5,42 +5,6 @@ __copyright__ = '2008-2012, Darko Miletic <darko.miletic at gmail.com>'
 clarin.com
 '''
 
-import cookielib 
-import urllib2 
-
-import mechanize 
-
-
-# Browser 
-br = mechanize.Browser() 
-
-# Enable cookie support for urllib2 
-cookiejar = cookielib.LWPCookieJar() 
-br.set_cookiejar( cookiejar ) 
-
-# Broser options 
-
-br.set_handle_equiv( True ) 
-br.set_handle_gzip( True ) 
-br.set_handle_redirect( True ) 
-br.set_handle_referer( True ) 
-br.set_handle_robots( False ) 
-
-# ?? 
-br.set_handle_refresh( mechanize._http.HTTPRefreshProcessor(), max_time = 1 )
-
-br.addheaders = [ ( 'User-agent', 'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.1) Gecko/2008071615 Fedora/3.0.1-1.fc9 Firefox/3.0.1' ) ] 
-
-# authenticate 
-br.open( "https://app-pase.clarin.com/pase-registracion/app/pase/ingresarNavegable" ) 
-br.select_form( name = "ingresar_ingresar_paseForm" ) 
-# these two come from the code you posted
-# where you would normally put in your username and password
-br[ "ingresar_ingresar_email_paseInputComponent" ] = "fran.herrera124@hotmail.com"
-br[ "ingresar_ingresar_palabraClave_paseInputComponent" ] = "Curuzucuatia"
-
-logged_in = br.submit()   #submitting the login credentials
-
 from calibre.web.feeds.news import BasicNewsRecipe
 
 class Clarin(BasicNewsRecipe):
@@ -57,13 +21,15 @@ class Clarin(BasicNewsRecipe):
     delay                 = 1
     language              = 'es_AR'
     publication_type      = 'newspaper'
-    INDEX                 = 'http://www.clarin.com'
+    INDEX                 = 'http://www.clarin.com/politica'
     masthead_url          = 'http://www.clarin.com/static/CLAClarin/images/logo-clarin-print.jpg'
     extra_css             = """
                                body{font-family: Arial,Helvetica,sans-serif}
                                h2{font-family: Georgia,serif; font-size: xx-large}
-                               .info,.nombre-autor,.hora{font-size: small}
+                               .info,.columnista,.hora{font-size: small}
                             """
+
+    #ignore_duplicate_articles = {'title', 'url'} # mucho redireccionamiento entre clarin.com y clarin.ieco.com
 
     conversion_options = {
                           'comment'  : description
@@ -71,36 +37,107 @@ class Clarin(BasicNewsRecipe):
                         , 'publisher': publisher
                         , 'language' : language
                         }
+'''
+feeds = [
+               (u'Página principal' , u'http://www.clarin.com/rss/')
+              ,(u'Política'         , u'http://www.clarin.com/rss/politica/')
+              ,(u'Sociedad'         , u'http://www.clarin.com/rss/sociedad/')
 
-    keep_only_tags    = [dict(attrs={'class':['hd','mt','bd']})]
-    remove_tags       = [dict(name=['meta','base','link','iframe','embed','object'])]
+              ,(u'Deportes'         , u'http://www.clarin.com/rss/deportes/')
+              ,(u'Mundo'            , u'http://www.clarin.com/rss/mundo/')
+              ,(u'iEco'             , u'http://www.clarin.com/rss/ieco/') 
+              ,(u'ExtraShow'        , u'http://www.clarin.com/rss/extrashow/')
+              
+              ,(u'Ciudades'         , u'http://www.clarin.com/rss/ciudades/')
+              ,(u'Policiales'       , u'http://www.clarin.com/rss/policiales/')
+              ,(u'Tecnología'       , u'http://next.clarin.com/rss/')
+              ,(u'Rural'            , u'http://www.clarin.com/rss/rural/')
+              ,(u'Educación'        , u'http://www.clarin.com/rss/educacion/')
+              ,(u'Opinión'          , u'http://www.clarin.com/rss/opinion/')
+]
+'''
+
+    keep_only_tags    = [
+        dict(name='h1'),
+        dict(name='div', attrs={'class':'img-box'}),
+        dict(name='div', attrs={'class':'nota'}),
+        dict(name='div', attrs={'class':'columnista'})
+        #,dict(name='article', id={'Aries','Tauro'})
+
+    ]
+
+    #preprocess_regexps = [(re.compile(r'<head>.*?</head>', re.DOTALL), lambda
+     #   m:'<head></head>')]
+
+    remove_tags       = [
+        dict(name=['meta','base','link','iframe','embed','object'])
+    ]
     remove_attributes = ['lang']
 
-    feeds = [
-               (u'Pagina principal', u'http://www.clarin.com/rss/'             )
-              ,(u'Politica'        , u'http://www.clarin.com/rss/politica/'    )
-              ,(u'Deportes'        , u'http://www.clarin.com/rss/deportes/'    )
-              ,(u'Mundo'           , u'http://www.clarin.com/rss/mundo/'       )
-              ,(u'iEco'            , u'http://www.ieco.clarin.com/rss/'        )
-              ,(u'Espectaculos'    , u'http://www.clarin.com/rss/espectaculos/')
-              ,(u'Sociedad'        , u'http://www.clarin.com/rss/sociedad/'    )
-              ,(u'Ciudades'        , u'http://www.clarin.com/rss/ciudades/'    )
-              ,(u'Policiales'      , u'http://www.clarin.com/rss/policiales/'  )
-              ,(u'Internet'        , u'http://www.clarin.com/rss/internet/'    )
-            ]
 
     def print_version(self, url):
         return url + '?print=1'
+
+    def parse_index(self):
+        soup = self.index_to_soup(self.INDEX)
+        col = soup.find(name=['ul'], attrs={'class':'items'})
+        current_articles, feeds = [], []
+        for tag in col.findAll(name=['li'], attrs={'class':'item'}):
+            a = tag.find('a', href=True)
+            h3 = tag.find('h3')
+            if a is not None:
+                title, url = self.tag_to_string(h3), 'http://www.clarin.com' + a['href']
+                if title and url:
+                    p = tag.find('p')
+                    desc = self.tag_to_string(p) if p is not None else ''
+                    current_articles.append({'title':title, 'url':url, 'description':desc})
+                    self.log('\tArticle:', title, '[%s]' % url)
+                    self.log('\t\t', desc)
+        if current_articles:
+            feeds.append(('Política', current_articles))
+        return feeds
+
+http://www.clarin.com/horoscopo.html
+
+
 
     def get_article_url(self, article):
         return article.get('guid',  None)
 
     def get_cover_url(self):
-        cover_url = None
-        soup = self.index_to_soup(self.INDEX)
-        for item in soup.findAll('a', href=True):
-            if item['href'].startswith('/tapas/TAPA_CLA'):
-               cover_url = self.INDEX + item['href']
-               return cover_url
+        cover_url = "http://tapas.clarin.com/tapa/"
+        myarray = [time.strftime("%Y"),time.strftime("%m"),time.strftime("%d")]
+        for x in range(len(myarray)):
+            cover_url = cover_url + myarray[x] + "/"
+        cover_url = cover_url + time.strftime("%Y%m%d")+ "_thumb.jpg"
         return cover_url
 
+
+
+'''
+    def parse_index(self):
+        soup = self.index_to_soup(self.INDEX)
+        col = soup.find(attrs={'class':'contentColumn singleContent'})
+        current_section, current_articles = None, []
+        feeds = []
+        for tag in col.findAll(name=['h2', 'li'], attrs={'class':['section-header', 'top-item', 'river-item']}):
+            if tag.name == 'h2':
+                if current_section and current_articles:
+                    feeds.append((current_section, current_articles))
+                current_section = self.tag_to_string(tag).capitalize()
+                current_articles = []
+                self.log('Found section:', current_section)
+            elif current_section:
+                a = tag.find('a', href=True)
+                if a is not None:
+                    title, url = self.tag_to_string(a), a['href']
+                    if title and url:
+                        p = tag.find('p', attrs={'class':'river-dek'})
+                        desc = self.tag_to_string(p) if p is not None else ''
+                        current_articles.append({'title':title, 'url':url, 'description':desc})
+                        self.log('\tArticle:', title, '[%s]' % url)
+                        self.log('\t\t', desc)
+        if current_section and current_articles:
+            feeds.append((current_section, current_articles))
+        return feeds
+'''
